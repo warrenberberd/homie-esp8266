@@ -63,26 +63,17 @@ bool Config::load() {
   }
 
   /* Mandatory config items */
-  JsonObject reqWifi = parsedJson["wifi"];
   JsonObject reqMqtt = parsedJson["mqtt"];
+  const char* reqMqttHost = reqMqtt["host"];
 
   const char* reqName = parsedJson["name"];
-  const char* reqWifiSsid = reqWifi["ssid"];
-  const char* reqMqttHost = reqMqtt["host"];
 
   /* Optional config items */
   const char* reqDeviceId = parsedJson["device_id"] | DeviceId::get();
   uint16_t regDeviceStatsInterval = parsedJson["device_stats_interval"] | STATS_SEND_INTERVAL_SEC;
   bool reqOtaEnabled = parsedJson["ota"]["enabled"] | false;
 
-  uint16_t reqWifiChannel = reqWifi["channel"] | 0;
-  const char* reqWifiBssid = reqWifi["bssid"] | "";
-  const char* reqWifiPassword = reqWifi["password"]; // implicit | nullptr;
-  const char* reqWifiIp = reqWifi["ip"] | "";
-  const char* reqWifiMask = reqWifi["mask"] | "";
-  const char* reqWifiGw = reqWifi["gw"] | "";
-  const char* reqWifiDns1 = reqWifi["dns1"] | "";
-  const char* reqWifiDns2 = reqWifi["dns2"] | "";
+  loadWifi(parsedJson);
 
   uint16_t reqMqttPort = reqMqtt["port"] | DEFAULT_MQTT_PORT;
   bool reqMqttSsl = reqMqtt["ssl"] | false;
@@ -95,15 +86,7 @@ bool Config::load() {
   strlcpy(_configStruct.name, reqName, MAX_FRIENDLY_NAME_LENGTH);
   strlcpy(_configStruct.deviceId, reqDeviceId, MAX_DEVICE_ID_LENGTH);
   _configStruct.deviceStatsInterval = regDeviceStatsInterval;
-  strlcpy(_configStruct.wifi.ssid, reqWifiSsid, MAX_WIFI_SSID_LENGTH);
-  if (reqWifiPassword) strlcpy(_configStruct.wifi.password, reqWifiPassword, MAX_WIFI_PASSWORD_LENGTH);
-  strlcpy(_configStruct.wifi.bssid, reqWifiBssid, MAX_MAC_STRING_LENGTH + 6);
-  _configStruct.wifi.channel = reqWifiChannel;
-  strlcpy(_configStruct.wifi.ip, reqWifiIp, MAX_IP_STRING_LENGTH);
-  strlcpy(_configStruct.wifi.gw, reqWifiGw, MAX_IP_STRING_LENGTH);
-  strlcpy(_configStruct.wifi.mask, reqWifiMask, MAX_IP_STRING_LENGTH);
-  strlcpy(_configStruct.wifi.dns1, reqWifiDns1, MAX_IP_STRING_LENGTH);
-  strlcpy(_configStruct.wifi.dns2, reqWifiDns2, MAX_IP_STRING_LENGTH);
+
   strlcpy(_configStruct.mqtt.server.host, reqMqttHost, MAX_HOSTNAME_LENGTH);
 #if ASYNC_TCP_SSL_ENABLED
   _configStruct.mqtt.server.ssl.enabled = reqMqttSsl;
@@ -144,6 +127,89 @@ bool Config::load() {
   }
 
   _valid = true;
+  return true;
+}
+
+bool Config::loadWifi(const JsonObject parsedJson){
+  JsonVariant reqWifi = parsedJson["wifi"];
+
+  ConfigWiFi wifi;
+  _configStruct.currentWifiIdx=0;
+
+  if (reqWifi.is<JsonObject>()) {
+    wifi=loadOneWifi(reqWifi);
+    addWifiSetting(wifi,0);
+
+  }else if(reqWifi.is<JsonArray>()){
+    JsonArray reqWifiA = parsedJson["wifi"];
+    for(int i=0;i<reqWifiA.size();i++){
+      JsonVariant oneWifi=reqWifiA[i];
+      wifi=loadOneWifi(oneWifi);
+
+      addWifiSetting(wifi,i);
+    }
+
+    wifi=getWifiSetting(_configStruct.currentWifiIdx);
+  }
+
+
+  setCurrentWifiSettings(wifi);
+}
+
+ConfigWiFi Config::loadOneWifi(const JsonVariant reqWifi){
+  ConfigWiFi wifi;
+
+  const char* reqWifiSsid = reqWifi["ssid"];
+  uint16_t reqWifiChannel = reqWifi["channel"] | 0;
+  const char* reqWifiBssid = reqWifi["bssid"] | "";
+  const char* reqWifiPassword = reqWifi["password"]; // implicit | nullptr;
+  const char* reqWifiIp = reqWifi["ip"] | "";
+  const char* reqWifiMask = reqWifi["mask"] | "";
+  const char* reqWifiGw = reqWifi["gw"] | "";
+  const char* reqWifiDns1 = reqWifi["dns1"] | "";
+  const char* reqWifiDns2 = reqWifi["dns2"] | "";
+
+  strlcpy(wifi.ssid, reqWifiSsid, MAX_WIFI_SSID_LENGTH);
+  if (reqWifiPassword) strlcpy(wifi.password, reqWifiPassword, MAX_WIFI_PASSWORD_LENGTH);
+  strlcpy(wifi.bssid, reqWifiBssid, MAX_MAC_STRING_LENGTH + 6);
+  wifi.channel = reqWifiChannel;
+  strlcpy(wifi.ip, reqWifiIp, MAX_IP_STRING_LENGTH);
+  strlcpy(wifi.gw, reqWifiGw, MAX_IP_STRING_LENGTH);
+  strlcpy(wifi.mask, reqWifiMask, MAX_IP_STRING_LENGTH);
+  strlcpy(wifi.dns1, reqWifiDns1, MAX_IP_STRING_LENGTH);
+  strlcpy(wifi.dns2, reqWifiDns2, MAX_IP_STRING_LENGTH);
+
+  return wifi;
+}
+
+bool Config::setCurrentWifiSettings(ConfigWiFi& wifi){
+  _configStruct.currentWifi=wifi;
+}
+
+bool Config::addWifiSetting(ConfigWiFi& wifi,int idx){
+  _configStruct.listOfWifi[idx]=wifi;
+  _configStruct.countWifiSettings++;
+}
+
+ConfigWiFi& Config::getWifiSetting(int idx){
+  return _configStruct.listOfWifi[idx];
+}
+
+// Called by BootNormal::_onWifiDisconnected, to round robin around Wifi List
+bool Config::tryAnotherWifi(){
+  if(_configStruct.countWifiSettings<2) return false; // Only one config
+
+  uint nextWifiIdx=_configStruct.currentWifiIdx+1;
+  if(nextWifiIdx>_configStruct.countWifiSettings-1) nextWifiIdx=0;
+  if(nextWifiIdx>MAX_WIFI_CONFIG-1) nextWifiIdx=0;
+
+  Interface::get().getLogger() << F("Switch Wifi Settings to idx : ") << nextWifiIdx << F("...") << endl;
+
+  _configStruct.currentWifi=getWifiSetting(nextWifiIdx);
+  _configStruct.currentWifiIdx=nextWifiIdx;
+
+  Interface::get().getLogger() << F("   New SSID : ") << _configStruct.currentWifi.ssid  << endl;
+
   return true;
 }
 
@@ -294,12 +360,12 @@ void Config::log() const {
   Interface::get().getLogger() << F("  • Device Stats Interval: ") << _configStruct.deviceStatsInterval << F(" sec") << endl;
 
   Interface::get().getLogger() << F("  • Wi-Fi: ") << endl;
-  Interface::get().getLogger() << F("    ◦ SSID: ") << _configStruct.wifi.ssid << endl;
+  Interface::get().getLogger() << F("    ◦ SSID: ") << _configStruct.currentWifi.ssid << endl;
   Interface::get().getLogger() << F("    ◦ Password not shown") << endl;
-  if (strcmp_P(_configStruct.wifi.ip, PSTR("")) != 0) {
-    Interface::get().getLogger() << F("    ◦ IP: ") << _configStruct.wifi.ip << endl;
-    Interface::get().getLogger() << F("    ◦ Mask: ") << _configStruct.wifi.mask << endl;
-    Interface::get().getLogger() << F("    ◦ Gateway: ") << _configStruct.wifi.gw << endl;
+  if (strcmp_P(_configStruct.currentWifi.ip, PSTR("")) != 0) {
+    Interface::get().getLogger() << F("    ◦ IP: ") << _configStruct.currentWifi.ip << endl;
+    Interface::get().getLogger() << F("    ◦ Mask: ") << _configStruct.currentWifi.mask << endl;
+    Interface::get().getLogger() << F("    ◦ Gateway: ") << _configStruct.currentWifi.gw << endl;
   }
   Interface::get().getLogger() << F("  • MQTT: ") << endl;
   Interface::get().getLogger() << F("    ◦ Host: ") << _configStruct.mqtt.server.host << endl;

@@ -20,6 +20,7 @@ class Validation {
  private:
   static ConfigValidationResult _validateConfigRoot(const JsonObject object);
   static ConfigValidationResult _validateConfigWifi(const JsonObject object);
+  static ConfigValidationResult _validateOneConfigWifi(const JsonVariant wifi);
   static ConfigValidationResult _validateConfigMqtt(const JsonObject object);
   static ConfigValidationResult _validateConfigOta(const JsonObject object);
   static ConfigValidationResult _validateConfigSettings(const JsonObject object);

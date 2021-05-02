@@ -77,12 +77,43 @@ ConfigValidationResult Validation::_validateConfigWifi(const JsonObject object) 
 
   JsonVariant wifi = object["wifi"];
 
+  // If it's array, we check ALL items
+  if (wifi.is<JsonArray>()) {
+    ConfigValidationResult subResult;
+
+    for(uint idx=0;idx<wifi.size();idx++){
+      JsonVariant wifiO = object["wifi"][idx];
+      
+      subResult=_validateOneConfigWifi(wifiO);
+      if(!subResult.valid){
+        String msg="wifi idx '";
+        subResult.reason = String(msg + idx + "' is not an object");
+        return subResult;
+      }
+    }
+
+    return subResult; // If all OK, return true
+  }else if (!wifi.is<JsonObject>()) {
+    result.reason = F("wifi is not an object");
+    return result;
+  }
+
+  result=_validateOneConfigWifi(wifi);
+  return result;
+}
+
+ConfigValidationResult Validation::_validateOneConfigWifi(const JsonVariant wifi) {
+  ConfigValidationResult result;
+  result.valid = false;
+
+  //JsonVariant wifi = object["wifi"];
+
   if (!wifi.is<JsonObject>()) {
     result.reason = F("wifi is not an object");
     return result;
   }
 
-  {
+  { // Check SSID
     JsonVariant wifiSsid = wifi["ssid"];
 
     if (!wifiSsid.as<const char*>()) {
@@ -99,7 +130,7 @@ ConfigValidationResult Validation::_validateConfigWifi(const JsonObject object) 
     }
   }
 
-  {
+  { // Check Password
     JsonVariant wifiPassword = wifi["password"];
 
     if (!wifiPassword.isNull()) {
@@ -114,7 +145,7 @@ ConfigValidationResult Validation::_validateConfigWifi(const JsonObject object) 
     }
   }
 
-  {
+  { // Check BSSID
     JsonVariant wifiBssid = wifi["bssid"];
     JsonVariant wifiChannel = wifi["channel"];
 
@@ -138,7 +169,7 @@ ConfigValidationResult Validation::_validateConfigWifi(const JsonObject object) 
     }
   }
 
-  {
+  { // Check IP/Mask/GW
     JsonVariant wifiIp = wifi["ip"];
     JsonVariant wifiMask = wifi["mask"];
     JsonVariant wifiGw = wifi["gw"];
@@ -187,7 +218,7 @@ ConfigValidationResult Validation::_validateConfigWifi(const JsonObject object) 
     }
   }
 
-  {
+  { // Check DNS
     JsonVariant wifiDns1 = wifi["dns1"];
     JsonVariant wifiDns2 = wifi["dns2"];
 

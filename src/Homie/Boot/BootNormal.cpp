@@ -279,7 +279,7 @@ void BootNormal::_endOtaUpdate(bool success, uint8_t update_error) {
 void BootNormal::_wifiConnect() {
   if (!Interface::get().disable) {
     if (Interface::get().led.enabled) Interface::get().getBlinker().start(LED_WIFI_DELAY);
-    Interface::get().getLogger() << F("↕ Attempting to connect to Wi-Fi...") << endl;
+    Interface::get().getLogger() << F("↕ Attempting to connect to Wi-Fi '") <<  Interface::get().getConfig().get().currentWifi.ssid << F("' ...") << endl;
 
     if (WiFi.getMode() != WIFI_STA) WiFi.mode(WIFI_STA);
 
@@ -288,20 +288,20 @@ void BootNormal::_wifiConnect() {
     #elif defined(ESP8266)
     WiFi.hostname(Interface::get().getConfig().get().deviceId);
     #endif // ESP32
-    if (strcmp_P(Interface::get().getConfig().get().wifi.ip, PSTR("")) != 0) {  // on _validateConfigWifi there is a requirement for mask and gateway
+    if (strcmp_P(Interface::get().getConfig().get().currentWifi.ip, PSTR("")) != 0) {  // on _validateConfigWifi there is a requirement for mask and gateway
       IPAddress convertedIp;
-      convertedIp.fromString(Interface::get().getConfig().get().wifi.ip);
+      convertedIp.fromString(Interface::get().getConfig().get().currentWifi.ip);
       IPAddress convertedMask;
-      convertedMask.fromString(Interface::get().getConfig().get().wifi.mask);
+      convertedMask.fromString(Interface::get().getConfig().get().currentWifi.mask);
       IPAddress convertedGateway;
-      convertedGateway.fromString(Interface::get().getConfig().get().wifi.gw);
+      convertedGateway.fromString(Interface::get().getConfig().get().currentWifi.gw);
 
-      if (strcmp_P(Interface::get().getConfig().get().wifi.dns1, PSTR("")) != 0) {
+      if (strcmp_P(Interface::get().getConfig().get().currentWifi.dns1, PSTR("")) != 0) {
         IPAddress convertedDns1;
-        convertedDns1.fromString(Interface::get().getConfig().get().wifi.dns1);
-        if ((strcmp_P(Interface::get().getConfig().get().wifi.dns2, PSTR("")) != 0)) {  // on _validateConfigWifi there is requirement that we need dns1 if we want to define dns2
+        convertedDns1.fromString(Interface::get().getConfig().get().currentWifi.dns1);
+        if ((strcmp_P(Interface::get().getConfig().get().currentWifi.dns2, PSTR("")) != 0)) {  // on _validateConfigWifi there is requirement that we need dns1 if we want to define dns2
           IPAddress convertedDns2;
-          convertedDns2.fromString(Interface::get().getConfig().get().wifi.dns2);
+          convertedDns2.fromString(Interface::get().getConfig().get().currentWifi.dns2);
           WiFi.config(convertedIp, convertedGateway, convertedMask, convertedDns1, convertedDns2);
         } else {
           WiFi.config(convertedIp, convertedGateway, convertedMask, convertedDns1);
@@ -311,12 +311,12 @@ void BootNormal::_wifiConnect() {
       }
     }
 
-    if (strcmp_P(Interface::get().getConfig().get().wifi.bssid, PSTR("")) != 0) {
+    if (strcmp_P(Interface::get().getConfig().get().currentWifi.bssid, PSTR("")) != 0) {
       byte bssidBytes[6];
-      Helpers::stringToBytes(Interface::get().getConfig().get().wifi.bssid, ':', bssidBytes, 6, 16);
-      WiFi.begin(Interface::get().getConfig().get().wifi.ssid, Interface::get().getConfig().get().wifi.password, Interface::get().getConfig().get().wifi.channel, bssidBytes);
+      Helpers::stringToBytes(Interface::get().getConfig().get().currentWifi.bssid, ':', bssidBytes, 6, 16);
+      WiFi.begin(Interface::get().getConfig().get().currentWifi.ssid, Interface::get().getConfig().get().currentWifi.password, Interface::get().getConfig().get().currentWifi.channel, bssidBytes);
     } else {
-      WiFi.begin(Interface::get().getConfig().get().wifi.ssid, Interface::get().getConfig().get().wifi.password);
+      WiFi.begin(Interface::get().getConfig().get().currentWifi.ssid, Interface::get().getConfig().get().currentWifi.password);
     }
 
     #ifdef ESP32
@@ -339,9 +339,9 @@ void BootNormal::_onWifiGotIp(WiFiEvent_t event, WiFiEventInfo_t info) {
   Interface::get().event.mask = IPAddress(info.got_ip.ip_info.netmask.addr);
   Interface::get().event.gateway = IPAddress(info.got_ip.ip_info.gw.addr);
   Interface::get().eventHandler(Interface::get().event);
-#if HOMIE_MDNS
+  #if HOMIE_MDNS
   MDNS.begin(Interface::get().getConfig().get().deviceId);
-#endif
+  #endif
 
   _mqttConnect();
 }
@@ -374,6 +374,9 @@ void BootNormal::_onWifiDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
   Interface::get().event.wifiReason = info.disconnected.reason;
   Interface::get().eventHandler(Interface::get().event);
 
+  // If WiFi Disconnect, try another Wifi
+  Interface::get().getConfig().tryAnotherWifi();
+  
   _wifiConnect();
 }
 #elif defined(ESP8266)
@@ -386,6 +389,9 @@ void BootNormal::_onWifiDisconnected(const WiFiEventStationModeDisconnected& eve
   Interface::get().event.type = HomieEventType::WIFI_DISCONNECTED;
   Interface::get().event.wifiReason = event.reason;
   Interface::get().eventHandler(Interface::get().event);
+
+  // If WiFi Disconnect, try another Wifi
+  Interface::get().getConfig().tryAnotherWifi();
 
   _wifiConnect();
 }
@@ -1036,7 +1042,7 @@ bool HomieInternals::BootNormal::__handleOTAUpdates(char* topic, char* payload, 
         }
         ++count;
 
-                                                  //  Done with the update?
+                                                   //  Done with the update?
         if (index + len == total) {
           // With base64-coded firmware, we may have provided a length off by one or two
           // to Update.begin() because the base64-coded firmware may use padding (one or
@@ -1122,9 +1128,7 @@ bool HomieInternals::BootNormal::__handleNodeProperty(char * topic, char * paylo
   char* node = _mqttTopicLevels.get()[1];
   char* property = _mqttTopicLevels.get()[2];
 
-  #ifdef DEBUG
-    Interface::get().getLogger() << F("Recived network message for ") << homieNode->getId() << endl;
-  #endif // DEBUG
+
 
   int16_t rangeSeparator = -1;
   for (uint16_t i = 0; i < strlen(node); i++) {
@@ -1149,6 +1153,10 @@ bool HomieInternals::BootNormal::__handleNodeProperty(char * topic, char * paylo
 
   HomieNode* homieNode = nullptr;
   homieNode = HomieNode::find(node);
+  
+  #ifdef DEBUG
+    Interface::get().getLogger() << F("Recived network message for ") << homieNode->getId() << endl;
+  #endif // DEBUG
 
   if (!homieNode) {
     Interface::get().getLogger() << F("Node ") << node << F(" not registered") << endl;

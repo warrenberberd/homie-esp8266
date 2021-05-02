@@ -22,6 +22,13 @@ class Config {
  public:
   Config();
   bool load();
+  bool loadWifi(const JsonObject config);
+  ConfigWiFi loadOneWifi(const JsonVariant reqWifi);
+  bool setCurrentWifiSettings(ConfigWiFi& wifi);
+  bool addWifiSetting(ConfigWiFi& wifi,int idx=0);
+  ConfigWiFi& getWifiSetting(int idx=0);
+  bool tryAnotherWifi();
+
   inline const ConfigStruct& get() const;
   char* getSafeConfigFile() const;
   void erase();

@@ -2,6 +2,7 @@
 
 #include "../Constants.hpp"
 #include "../Limits.hpp"
+#include "ConfigWifi.hpp"
 
 namespace HomieInternals {
 struct ConfigStruct {
@@ -9,17 +10,10 @@ struct ConfigStruct {
   char deviceId[MAX_DEVICE_ID_LENGTH];
   uint16_t deviceStatsInterval;
 
-  struct WiFi {
-    char ssid[MAX_WIFI_SSID_LENGTH];
-    char password[MAX_WIFI_PASSWORD_LENGTH];
-    char bssid[MAX_MAC_STRING_LENGTH + 6];
-    uint16_t channel;
-    char ip[MAX_IP_STRING_LENGTH];
-    char mask[MAX_IP_STRING_LENGTH];
-    char gw[MAX_IP_STRING_LENGTH];
-    char dns1[MAX_IP_STRING_LENGTH];
-    char dns2[MAX_IP_STRING_LENGTH];
-  } wifi;
+  ConfigWiFi currentWifi;
+  ConfigWiFi listOfWifi[MAX_WIFI_CONFIG];
+  uint currentWifiIdx=0;
+  uint countWifiSettings=0;
 
   struct MQTT {
     struct Server {
