@@ -1,4 +1,7 @@
 #include "BootConfig.hpp"
+#include <WiFiClient.h>
+
+WiFiClient wifiClient;
 
 #if HOMIE_CONFIG
 using namespace HomieInternals;
@@ -24,6 +27,9 @@ BootConfig::~BootConfig() {
 
 void BootConfig::setup() {
   Boot::setup();
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootConfig::setup()") << endl;
+#endif
 
   if (Interface::get().led.enabled) {
     digitalWrite(Interface::get().led.pin, Interface::get().led.on);
@@ -76,6 +82,9 @@ void BootConfig::setup() {
 
 void BootConfig::loop() {
   Boot::loop();
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootConfig::loop()") << endl;
+#endif
 
   _dns.processNextRequest();
 
@@ -120,6 +129,9 @@ void BootConfig::loop() {
 }
 
 void BootConfig::_onWifiConnectRequest(AsyncWebServerRequest *request) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootConfig::_onWifiConnectRequest()") << endl;
+#endif
   Interface::get().getLogger() << F("Received Wi-Fi connect request") << endl;
   StaticJsonDocument<JSON_OBJECT_SIZE(2)> parseJsonDoc;
   char* body = reinterpret_cast<char*>(request->_tempObject);
@@ -148,6 +160,9 @@ void BootConfig::_onWifiConnectRequest(AsyncWebServerRequest *request) {
 }
 
 void BootConfig::_onWifiStatusRequest(AsyncWebServerRequest *request) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootConfig::_onWifiStatusRequest()") << endl;
+#endif
   Interface::get().getLogger() << F("Received Wi-Fi status request") << endl;
 
   // Includes memory to duplicate strings for status ("no_ssid_available" -> 18) and local_ip (IPv4 -> 16)
@@ -188,6 +203,9 @@ void BootConfig::_onWifiStatusRequest(AsyncWebServerRequest *request) {
 }
 
 void BootConfig::_onProxyControlRequest(AsyncWebServerRequest *request) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootConfig::_onProxyControlRequest()") << endl;
+#endif
   Interface::get().getLogger() << F("Received proxy control request") << endl;
   StaticJsonDocument<JSON_OBJECT_SIZE(1)> parseJsonDoc;
   char* body = reinterpret_cast<char*>(request->_tempObject);
@@ -208,6 +226,9 @@ void BootConfig::_onProxyControlRequest(AsyncWebServerRequest *request) {
 }
 
 void BootConfig::_generateNetworksJson() {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootConfig::_generateNetworksJson()") << endl;
+#endif
   DynamicJsonDocument generatedJsonDoc(
     JSON_OBJECT_SIZE(1) + // Root object
     JSON_ARRAY_SIZE(_ssidCount) + // Array "networks"
@@ -285,15 +306,15 @@ void BootConfig::_onCaptivePortal(AsyncWebServerRequest *request) {
       Interface::get().getLogger() << F("Proxy") << endl;
       _proxyHttpRequest(request);
     }
-  } else if (request->url() == "/" && !SPIFFS.exists(CONFIG_UI_BUNDLE_PATH)) {
+  } else if (request->url() == "/" && !LittleFS.exists(CONFIG_UI_BUNDLE_PATH)) {
     // UI File not found
     String msg = String(F("UI bundle not loaded. See Configuration API usage: http://homieiot.github.io/homie-esp8266"));
     Interface::get().getLogger() << msg << endl;
     request->send(404, F("text/plain"), msg);
-  } else if (request->url() == "/" && SPIFFS.exists(CONFIG_UI_BUNDLE_PATH)) {
+  } else if (request->url() == "/" && LittleFS.exists(CONFIG_UI_BUNDLE_PATH)) {
     // Respond with UI
     Interface::get().getLogger() << F("UI bundle found") << endl;
-    AsyncWebServerResponse *response = request->beginResponse(SPIFFS.open(CONFIG_UI_BUNDLE_PATH, "r"), F("index.html"), F("text/html"));
+    AsyncWebServerResponse *response = request->beginResponse(LittleFS.open(CONFIG_UI_BUNDLE_PATH, "r"), F("index.html"), F("text/html"));
     request->send(response);
   } else {
     // Faild to find request
@@ -312,7 +333,7 @@ void BootConfig::_proxyHttpRequest(AsyncWebServerRequest *request) {
 
   // send request to destination (as in incoming host header)
   _httpClient.setUserAgent(F("ESP8266-Homie"));
-  _httpClient.begin(url);
+  _httpClient.begin(wifiClient,url);
   // copy headers
   for (size_t i = 0; i < request->headers(); i++) {
     _httpClient.addHeader(request->headerName(i), request->header(i));

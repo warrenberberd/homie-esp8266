@@ -2,6 +2,8 @@
 
 using namespace HomieInternals;
 
+unsigned int COUNT_MQTT_RETRY=0;
+
 BootNormal::BootNormal()
   : Boot("normal")
   , _mqttReconnectTimer(MQTT_RECONNECT_INITIAL_INTERVAL, MQTT_RECONNECT_MAX_BACKOFF)
@@ -113,6 +115,9 @@ void BootNormal::setup() {
 
 void BootNormal::loop() {
   Boot::loop();
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootNormal::loop()") << endl;
+#endif
 
   if (_flaggedForReboot && Interface::get().reset.idle) {
     Interface::get().getLogger() << F("Device is idle") << endl;
@@ -122,80 +127,95 @@ void BootNormal::loop() {
     ESP.restart();
   }
 
+  // If is disable; stop it
+  if(Interface::get().disable) return;
+
   for (HomieNode* iNode : HomieNode::nodes) {
     if (iNode->runLoopDisconnected || (Interface::get().getMqttClient().connected() && _mqttConnectNotified)) iNode->loop();
   }
-  if (_mqttReconnectTimer.check()) {
+  if (_mqttReconnectTimer.check() && Interface::get().isMqttEnabled()) {
     _mqttConnect();
-    return;
-  }
+    COUNT_MQTT_RETRY++;
 
-  if (!Interface::get().getMqttClient().connected()) return;
+    if(COUNT_MQTT_RETRY>=Interface::get().getConfig().get().mqtt.maxRetryCount){
+      Interface::get().getLogger() << F("✖ Disabling Homie cause MQTT does not respond.") << endl;
+      if (Interface::get().led.enabled) Interface::get().getBlinker().setLedON(); // Stop blinking, and stay ON
 
-  // here, we are connected to the broker
-
-  if (!_advertisementProgress.done) {
-    _advertise();
-    return;
-  }
-
-  if (_otaOngoing) return;
-  // here, we finished the advertisement
-
-  if (!_mqttConnectNotified) {
-    Interface::get().ready = true;
-    if (Interface::get().led.enabled) Interface::get().getBlinker().stop();
-
-    Interface::get().getLogger() << F("✔ MQTT ready") << endl;
-    Interface::get().getLogger() << F("Triggering MQTT_READY event...") << endl;
-    Interface::get().event.type = HomieEventType::MQTT_READY;
-    Interface::get().eventHandler(Interface::get().event);
-
-    for (HomieNode* iNode : HomieNode::nodes) {
-      iNode->onReadyToOperate();
+      Interface::get().setMqttEnabled(false);
     }
 
-    if (!_setupFunctionCalled) {
-      Interface::get().getLogger() << F("Calling setup function...") << endl;
-      Interface::get().setupFunction();
-      _setupFunctionCalled = true;
-    }
-
-    _mqttConnectNotified = true;
     return;
   }
 
-  // here, we have notified the sketch we are ready
+  if (Interface::get().getMqttClient().connected()){
+    COUNT_MQTT_RETRY=0; // If MQTT connected, reset counter
 
-  if (_mqttOfflineMessageId == 0 && Interface::get().flaggedForSleep) {
-    Interface::get().getLogger() << F("Device in preparation to sleep...") << endl;
-    _mqttOfflineMessageId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$state")), 1, true, "sleeping");
+    // here, we are connected to the broker
+
+    if (!_advertisementProgress.done) {
+      _advertise();
+      return;
+    }
+
+    if (_otaOngoing) return;
+    // here, we finished the advertisement
+
+    if (!_mqttConnectNotified) {
+      Interface::get().ready = true;
+      if (Interface::get().led.enabled) Interface::get().getBlinker().stop();
+
+      Interface::get().getLogger() << F("✔ MQTT ready") << endl;
+      Interface::get().getLogger() << F("Triggering MQTT_READY event...") << endl;
+      Interface::get().event.type = HomieEventType::MQTT_READY;
+      Interface::get().eventHandler(Interface::get().event);
+
+      for (HomieNode* iNode : HomieNode::nodes) {
+        iNode->onReadyToOperate();
+      }
+
+      if (!_setupFunctionCalled) {
+        Interface::get().getLogger() << F("Calling setup function...") << endl;
+        Interface::get().setupFunction();
+        _setupFunctionCalled = true;
+      }
+
+      _mqttConnectNotified = true;
+      return;
+    }
+
+    // here, we have notified the sketch we are ready
+
+    if (_mqttOfflineMessageId == 0 && Interface::get().flaggedForSleep) {
+      Interface::get().getLogger() << F("Device in preparation to sleep...") << endl;
+      _mqttOfflineMessageId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$state")), 1, true, "sleeping");
+    }
+
+    if (_statsTimer.check()) {
+      char statsIntervalStr[3 + 1];
+      itoa(Interface::get().getConfig().get().deviceStatsInterval+5, statsIntervalStr, 10);
+      Interface::get().getLogger() << F("〽 Sending statistics...") << endl;
+      Interface::get().getLogger() << F("  • Interval: ") << statsIntervalStr << F("s (") << Interface::get().getConfig().get().deviceStatsInterval << F("s including 5s grace time)") << endl;
+      uint16_t intervalPacketId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$stats/interval")), 1, true, statsIntervalStr);
+
+      uint8_t quality = Helpers::rssiToPercentage(WiFi.RSSI());
+      char qualityStr[3 + 1];
+      itoa(quality, qualityStr, 10);
+      Interface::get().getLogger() << F("  • Wi-Fi signal quality: ") << qualityStr << F("%") << endl;
+      uint16_t signalPacketId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$stats/signal")), 1, true, qualityStr);
+
+      _uptime.update();
+      char uptimeStr[20 + 1];
+      itoa(_uptime.getSeconds(), uptimeStr, 10);
+      Interface::get().getLogger() << F("  • Uptime: ") << uptimeStr << F("s") << endl;
+      uint16_t uptimePacketId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$stats/uptime")), 1, true, uptimeStr);
+
+      if (intervalPacketId != 0 && signalPacketId != 0 && uptimePacketId != 0) _statsTimer.tick();
+      Interface::get().event.type = HomieEventType::SENDING_STATISTICS;
+      Interface::get().eventHandler(Interface::get().event);
+    }
+  
   }
-
-  if (_statsTimer.check()) {
-    char statsIntervalStr[3 + 1];
-    itoa(Interface::get().getConfig().get().deviceStatsInterval+5, statsIntervalStr, 10);
-    Interface::get().getLogger() << F("〽 Sending statistics...") << endl;
-    Interface::get().getLogger() << F("  • Interval: ") << statsIntervalStr << F("s (") << Interface::get().getConfig().get().deviceStatsInterval << F("s including 5s grace time)") << endl;
-    uint16_t intervalPacketId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$stats/interval")), 1, true, statsIntervalStr);
-
-    uint8_t quality = Helpers::rssiToPercentage(WiFi.RSSI());
-    char qualityStr[3 + 1];
-    itoa(quality, qualityStr, 10);
-    Interface::get().getLogger() << F("  • Wi-Fi signal quality: ") << qualityStr << F("%") << endl;
-    uint16_t signalPacketId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$stats/signal")), 1, true, qualityStr);
-
-    _uptime.update();
-    char uptimeStr[20 + 1];
-    itoa(_uptime.getSeconds(), uptimeStr, 10);
-    Interface::get().getLogger() << F("  • Uptime: ") << uptimeStr << F("s") << endl;
-    uint16_t uptimePacketId = Interface::get().getMqttClient().publish(_prefixMqttTopic(PSTR("/$stats/uptime")), 1, true, uptimeStr);
-
-    if (intervalPacketId != 0 && signalPacketId != 0 && uptimePacketId != 0) _statsTimer.tick();
-    Interface::get().event.type = HomieEventType::SENDING_STATISTICS;
-    Interface::get().eventHandler(Interface::get().event);
-  }
-
+  
   Interface::get().loopFunction();
 }
 
@@ -212,6 +232,8 @@ char* BootNormal::_prefixMqttTopic(PGM_P topic) {
 }
 
 bool BootNormal::_publishOtaStatus(int status, const char* info) {
+  if(!Interface::get().isMqttEnabled()) return false;
+
   String payload(status);
   if (info) {
     payload.concat(F(" "));
@@ -398,6 +420,8 @@ void BootNormal::_onWifiDisconnected(const WiFiEventStationModeDisconnected& eve
 #endif // ESP32
 
 void BootNormal::_mqttConnect() {
+  if(!Interface::get().isMqttEnabled()) return;
+
   if (!Interface::get().disable) {
     if (Interface::get().led.enabled) Interface::get().getBlinker().start(LED_MQTT_DELAY);
     _mqttConnectNotified = false;
@@ -407,6 +431,109 @@ void BootNormal::_mqttConnect() {
 }
 
 void BootNormal::_advertise() {
+  if(!Interface::get().isMqttEnabled()) return;
+
+  Serial.print("↕ Advertisement Global Step :");
+
+  bool skip=true;
+  switch (_advertisementProgress.globalStep){
+    case AdvertisementProgress::GlobalStep::PUB_INIT:
+      Serial.println("PUB_INIT");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_HOMIE:
+      Serial.println("PUB_HOMIE");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_NAME:
+      Serial.println("PUB_NAME");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_MAC:
+      Serial.println("PUB_MAC");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_LOCALIP:
+      Serial.println("PUB_LOCALIP");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_NODES_ATTR:
+      Serial.println("PUB_NODES_ATTR");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_STATS:
+      Serial.println("PUB_STATS");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_STATS_INTERVAL:
+      Serial.println("PUB_STATS_INTERVAL");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_FW_NAME:
+      Serial.println("PUB_FW_NAME");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_FW_VERSION:
+      Serial.println("PUB_FW_VERSION");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_FW_CHECKSUM:
+      Serial.println("PUB_FW_CHECKSUM");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_IMPLEMENTATION:
+      Serial.println("PUB_IMPLEMENTATION");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_IMPLEMENTATION_CONFIG:
+      //Serial.println("PUB_IMPLEMENTATION_CONFIG");
+
+      _advertisementProgress.globalStep = AdvertisementProgress::GlobalStep::PUB_NODES;
+      _advertisementProgress.nodeStep = AdvertisementProgress::NodeStep::PUB_NAME;
+      _advertisementProgress.currentNodeIndex = 0;
+      //skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_IMPLEMENTATION_VERSION:
+      Serial.println("PUB_IMPLEMENTATION_VERSION");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_IMPLEMENTATION_OTA_ENABLED:
+      //Serial.println("PUB_IMPLEMENTATION_OTA_ENABLED");
+      //skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_NODES:
+      Serial.println("PUB_NODES");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::SUB_IMPLEMENTATION_OTA:
+      Serial.println("SUB_IMPLEMENTATION_OTA");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::SUB_IMPLEMENTATION_RESET:
+      Serial.println("SUB_IMPLEMENTATION_RESET");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::SUB_IMPLEMENTATION_CONFIG_SET:
+      Serial.println("SUB_IMPLEMENTATION_CONFIG_SET");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::SUB_SET:
+      Serial.println("SUB_SET");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::SUB_BROADCAST:
+      Serial.println("SUB_BROADCAST");
+      skip=false;
+      break;
+    case AdvertisementProgress::GlobalStep::PUB_READY:
+      Serial.println("PUB_READY");
+      skip=false;
+      break;
+  }
+
+  //debug
+  if(skip) return;
+  
   uint16_t packetId;
   switch (_advertisementProgress.globalStep) {
     case AdvertisementProgress::GlobalStep::PUB_INIT:

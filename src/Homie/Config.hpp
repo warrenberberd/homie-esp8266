@@ -4,9 +4,9 @@
 
 #include <ArduinoJson.h>
 #ifdef ESP32
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #endif // ESP32
-#include "FS.h"
+#include "LittleFS.h"
 #include "Datatypes/Interface.hpp"
 #include "Datatypes/ConfigStruct.hpp"
 #include "Utils/DeviceId.hpp"
@@ -22,7 +22,7 @@ class Config {
  public:
   Config();
   bool load();
-  bool loadWifi(const JsonObject config);
+  bool loadWifi(const JsonVariant config);
   ConfigWiFi loadOneWifi(const JsonVariant reqWifi);
   bool setCurrentWifiSettings(ConfigWiFi& wifi);
   bool addWifiSetting(ConfigWiFi& wifi,int idx=0);
@@ -41,10 +41,10 @@ class Config {
 
  private:
   ConfigStruct _configStruct;
-  bool _spiffsBegan;
+  bool _littlefsBegan;
   bool _valid;
 
-  bool _spiffsBegin();
+  bool _littlefsBegin();
   void _patchJsonObject(JsonObject object, JsonObject patch);
 };
 

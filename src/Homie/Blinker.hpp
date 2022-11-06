@@ -9,6 +9,7 @@ class Blinker {
   Blinker();
   void start(float blinkPace);
   void stop();
+  void setLedON();
 
  private:
   Ticker _ticker;

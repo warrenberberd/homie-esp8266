@@ -40,6 +40,8 @@ SendingPromise& SendingPromise::setRange(uint16_t rangeIndex) {
 }
 
 uint16_t SendingPromise::send(const String& value) {
+  if(!Interface::get().isMqttEnabled()) return 0 ; // To avoid warning when MQTT is disabled
+
   if (!Interface::get().ready) {
     Interface::get().getLogger() << F("✖ setNodeProperty(): impossible now") << endl;
     return 0;

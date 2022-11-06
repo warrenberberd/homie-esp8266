@@ -4,34 +4,34 @@ using namespace HomieInternals;
 
 Config::Config()
   : _configStruct()
-  , _spiffsBegan(false)
+  , _littlefsBegan(false)
   , _valid(false) {
 }
 
-bool Config::_spiffsBegin() {
-  if (!_spiffsBegan) {
+bool Config::_littlefsBegin() {
+  if (!_littlefsBegan) {
 #ifdef ESP32
-    _spiffsBegan = SPIFFS.begin(true);
+    _littlefsBegan = LittleFS.begin(true);
 #elif defined(ESP8266)
-    _spiffsBegan = SPIFFS.begin();
+    _littlefsBegan = LittleFS.begin();
 #endif
-    if (!_spiffsBegan) Interface::get().getLogger() << F("✖ Cannot mount filesystem") << endl;
+    if (!_littlefsBegan) Interface::get().getLogger() << F("✖ Cannot mount filesystem") << endl;
   }
 
-  return _spiffsBegan;
+  return _littlefsBegan;
 }
 
 bool Config::load() {
-  if (!_spiffsBegin()) { return false; }
+  if (!_littlefsBegin()) { return false; }
 
   _valid = false;
 
-  if (!SPIFFS.exists(CONFIG_FILE_PATH)) {
+  if (!LittleFS.exists(CONFIG_FILE_PATH)) {
     Interface::get().getLogger() << F("✖ ") << CONFIG_FILE_PATH << F(" doesn't exist") << endl;
     return false;
   }
 
-  File configFile = SPIFFS.open(CONFIG_FILE_PATH, "r");
+  File configFile = LittleFS.open(CONFIG_FILE_PATH, "r");
   if (!configFile) {
     Interface::get().getLogger() << F("✖ Cannot open config file") << endl;
     return false;
@@ -52,6 +52,7 @@ bool Config::load() {
   StaticJsonDocument<MAX_JSON_CONFIG_ARDUINOJSON_BUFFER_SIZE> jsonDoc;
   if (deserializeJson(jsonDoc, buf) != DeserializationError::Ok || !jsonDoc.is<JsonObject>()) {
     Interface::get().getLogger() << F("✖ Invalid JSON in the config file") << endl;
+    Interface::get().getLogger() << buf << endl;
     return false;
   }
 
@@ -64,7 +65,7 @@ bool Config::load() {
 
   /* Mandatory config items */
   JsonObject reqMqtt = parsedJson["mqtt"];
-  const char* reqMqttHost = reqMqtt["host"];
+  const char* reqMqttHost = reqMqtt["host"] | "localhost";
 
   const char* reqName = parsedJson["name"];
 
@@ -73,13 +74,14 @@ bool Config::load() {
   uint16_t regDeviceStatsInterval = parsedJson["device_stats_interval"] | STATS_SEND_INTERVAL_SEC;
   bool reqOtaEnabled = parsedJson["ota"]["enabled"] | false;
 
-  loadWifi(parsedJson);
+  loadWifi(parsedJson["wifi"]);
 
   uint16_t reqMqttPort = reqMqtt["port"] | DEFAULT_MQTT_PORT;
   bool reqMqttSsl = reqMqtt["ssl"] | false;
   bool reqMqttAuth = reqMqtt["auth"] | false;
   const char* reqMqttUsername = reqMqtt["username"] | "";
   const char* reqMqttPassword = reqMqtt["password"] | "";
+  uint16_t reqMaxRetryCount = reqMqtt["maxRetryCount"] | 3;
   const char* reqMqttFingerprint = reqMqtt["ssl_fingerprint"] | "";
   const char* reqMqttBaseTopic = reqMqtt["base_topic"] | DEFAULT_MQTT_BASE_TOPIC;
 
@@ -100,6 +102,7 @@ bool Config::load() {
   _configStruct.mqtt.auth = reqMqttAuth;
   strlcpy(_configStruct.mqtt.username, reqMqttUsername, MAX_MQTT_CREDS_LENGTH);
   strlcpy(_configStruct.mqtt.password, reqMqttPassword, MAX_MQTT_CREDS_LENGTH);
+  _configStruct.mqtt.maxRetryCount = reqMaxRetryCount;
   _configStruct.ota.enabled = reqOtaEnabled;
 
   /* Parse the settings */
@@ -130,8 +133,8 @@ bool Config::load() {
   return true;
 }
 
-bool Config::loadWifi(const JsonObject parsedJson){
-  JsonVariant reqWifi = parsedJson["wifi"];
+bool Config::loadWifi(const JsonVariant reqWifi){
+  //JsonVariant reqWifi = parsedJson["wifi"];
 
   ConfigWiFi wifi;
   _configStruct.currentWifiIdx=0;
@@ -141,8 +144,8 @@ bool Config::loadWifi(const JsonObject parsedJson){
     addWifiSetting(wifi,0);
 
   }else if(reqWifi.is<JsonArray>()){
-    JsonArray reqWifiA = parsedJson["wifi"];
-    for(int i=0;i<reqWifiA.size();i++){
+    JsonArray reqWifiA = reqWifi;
+    for(unsigned int i=0;i<reqWifiA.size();i++){
       JsonVariant oneWifi=reqWifiA[i];
       wifi=loadOneWifi(oneWifi);
 
@@ -152,8 +155,7 @@ bool Config::loadWifi(const JsonObject parsedJson){
     wifi=getWifiSetting(_configStruct.currentWifiIdx);
   }
 
-
-  setCurrentWifiSettings(wifi);
+  return setCurrentWifiSettings(wifi);
 }
 
 ConfigWiFi Config::loadOneWifi(const JsonVariant reqWifi){
@@ -184,11 +186,13 @@ ConfigWiFi Config::loadOneWifi(const JsonVariant reqWifi){
 
 bool Config::setCurrentWifiSettings(ConfigWiFi& wifi){
   _configStruct.currentWifi=wifi;
+  return true;
 }
 
 bool Config::addWifiSetting(ConfigWiFi& wifi,int idx){
   _configStruct.listOfWifi[idx]=wifi;
   _configStruct.countWifiSettings++;
+  return true;
 }
 
 ConfigWiFi& Config::getWifiSetting(int idx){
@@ -214,7 +218,7 @@ bool Config::tryAnotherWifi(){
 }
 
 char* Config::getSafeConfigFile() const {
-  File configFile = SPIFFS.open(CONFIG_FILE_PATH, "r");
+  File configFile = LittleFS.open(CONFIG_FILE_PATH, "r");
   size_t configSize = configFile.size();
 
   char buf[MAX_JSON_CONFIG_FILE_SIZE];
@@ -236,19 +240,19 @@ char* Config::getSafeConfigFile() const {
 }
 
 void Config::erase() {
-  if (!_spiffsBegin()) { return; }
+  if (!_littlefsBegin()) { return; }
 
-  SPIFFS.remove(CONFIG_FILE_PATH);
-  SPIFFS.remove(CONFIG_NEXT_BOOT_MODE_FILE_PATH);
+  LittleFS.remove(CONFIG_FILE_PATH);
+  LittleFS.remove(CONFIG_NEXT_BOOT_MODE_FILE_PATH);
 }
 
 void Config::setHomieBootModeOnNextBoot(HomieBootMode bootMode) {
-  if (!_spiffsBegin()) { return; }
+  if (!_littlefsBegin()) { return; }
 
   if (bootMode == HomieBootMode::UNDEFINED) {
-    SPIFFS.remove(CONFIG_NEXT_BOOT_MODE_FILE_PATH);
+    LittleFS.remove(CONFIG_NEXT_BOOT_MODE_FILE_PATH);
   } else {
-    File bootModeFile = SPIFFS.open(CONFIG_NEXT_BOOT_MODE_FILE_PATH, "w");
+    File bootModeFile = LittleFS.open(CONFIG_NEXT_BOOT_MODE_FILE_PATH, "w");
     if (!bootModeFile) {
       Interface::get().getLogger() << F("✖ Cannot open NEXTMODE file") << endl;
       return;
@@ -261,9 +265,9 @@ void Config::setHomieBootModeOnNextBoot(HomieBootMode bootMode) {
 }
 
 HomieBootMode Config::getHomieBootModeOnNextBoot() {
-  if (!_spiffsBegin()) { return HomieBootMode::UNDEFINED; }
+  if (!_littlefsBegin()) { return HomieBootMode::UNDEFINED; }
 
-  File bootModeFile = SPIFFS.open(CONFIG_NEXT_BOOT_MODE_FILE_PATH, "r");
+  File bootModeFile = LittleFS.open(CONFIG_NEXT_BOOT_MODE_FILE_PATH, "r");
   if (bootModeFile) {
     int v = bootModeFile.parseInt();
     bootModeFile.close();
@@ -274,11 +278,11 @@ HomieBootMode Config::getHomieBootModeOnNextBoot() {
 }
 
 void Config::write(const JsonObject config) {
-  if (!_spiffsBegin()) { return; }
+  if (!_littlefsBegin()) { return; }
 
-  SPIFFS.remove(CONFIG_FILE_PATH);
+  LittleFS.remove(CONFIG_FILE_PATH);
 
-  File configFile = SPIFFS.open(CONFIG_FILE_PATH, "w");
+  File configFile = LittleFS.open(CONFIG_FILE_PATH, "w");
   if (!configFile) {
     Interface::get().getLogger() << F("✖ Cannot open config file") << endl;
     return;
@@ -288,7 +292,7 @@ void Config::write(const JsonObject config) {
 }
 
 bool Config::patch(const char* patch) {
-  if (!_spiffsBegin()) { return false; }
+  if (!_littlefsBegin()) { return false; }
 
   StaticJsonDocument<MAX_JSON_CONFIG_ARDUINOJSON_BUFFER_SIZE> patchJsonDoc;
 
@@ -298,7 +302,7 @@ bool Config::patch(const char* patch) {
   }
 
   JsonObject patchObject = patchJsonDoc.as<JsonObject>();
-  File configFile = SPIFFS.open(CONFIG_FILE_PATH, "r");
+  File configFile = LittleFS.open(CONFIG_FILE_PATH, "r");
   if (!configFile) {
     Interface::get().getLogger() << F("✖ Cannot open config file") << endl;
     return false;

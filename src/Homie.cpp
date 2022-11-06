@@ -57,6 +57,9 @@ void HomieClass::_checkBeforeSetup(const __FlashStringHelper* functionName) cons
 }
 
 void HomieClass::setup() {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::setup()") << endl;
+#endif
   _setupCalled = true;
 
   // Check if firmware is set
@@ -167,6 +170,9 @@ void HomieClass::setup() {
 }
 
 void HomieClass::loop() {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::loop()") << endl;
+#endif
   _boot->loop();
 
   if (_flaggedForReboot && Interface::get().reset.idle) {
@@ -308,14 +314,23 @@ HomieClass& HomieClass::setHomieBootModeOnNextBoot(HomieBootMode bootMode) {
 }
 
 bool HomieClass::isConfigured() {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::isConfigured()") << endl;
+#endif
   return Interface::get().getConfig().load();
 }
 
 bool HomieClass::isConnected() {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::isConnected()") << endl;
+#endif
   return Interface::get().ready;
 }
 
 HomieClass& HomieClass::onEvent(const EventHandler& handler) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::onEvent()") << endl;
+#endif
   _checkBeforeSetup(F("onEvent"));
 
   Interface::get().eventHandler = handler;
@@ -355,6 +370,9 @@ Logger& HomieClass::getLogger() {
 }
 
 void HomieClass::prepareToSleep() {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::prepareToSleep()") << endl;
+#endif
   Interface::get().getLogger() << F("Flagged for sleep by sketch") << endl;
   if (Interface::get().ready) {
     Interface::get().disable = true;
@@ -369,6 +387,9 @@ void HomieClass::prepareToSleep() {
 
 #ifdef ESP32
 void HomieClass::doDeepSleep(uint64_t time_us) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::doDeepSleep()") << endl;
+#endif
   Interface::get().getLogger() << F("💤 Device is deep sleeping...") << endl;
   Serial.flush();
 
@@ -377,6 +398,9 @@ void HomieClass::doDeepSleep(uint64_t time_us) {
   esp_deep_sleep_start();
 }
 void HomieClass::doDeepSleep(gpio_num_t wakeupPin, int logicLevel) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::doDeepSleep()") << endl;
+#endif
   Interface::get().getLogger() << F("💤 Device is deep sleeping...") << endl;
   Serial.flush();
 
@@ -385,6 +409,9 @@ void HomieClass::doDeepSleep(gpio_num_t wakeupPin, int logicLevel) {
   esp_deep_sleep_start();
 }
 void HomieClass::doDeepSleep(uint64_t pinMask, esp_sleep_ext1_wakeup_mode_t mode) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::doDeepSleep()") << endl;
+#endif
   Interface::get().getLogger() << F("💤 Device is deep sleeping...") << endl;
   Serial.flush();
 
@@ -394,6 +421,9 @@ void HomieClass::doDeepSleep(uint64_t pinMask, esp_sleep_ext1_wakeup_mode_t mode
 }
 #elif defined(ESP8266)
 void HomieClass::doDeepSleep(uint64_t time_us, RFMode mode) {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : HomieClass::doDeepSleep()") << endl;
+#endif
   Interface::get().getLogger() << F("💤 Device is deep sleeping...") << endl;
   Serial.flush();
   ESP.deepSleep(time_us, mode);

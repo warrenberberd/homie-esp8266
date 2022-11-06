@@ -31,6 +31,7 @@ struct ConfigStruct {
     bool auth;
     char username[MAX_MQTT_CREDS_LENGTH];
     char password[MAX_MQTT_CREDS_LENGTH];
+    uint16_t maxRetryCount=3;
   } mqtt;
 
   struct OTA {

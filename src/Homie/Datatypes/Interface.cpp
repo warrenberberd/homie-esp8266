@@ -19,9 +19,11 @@ InterfaceData::InterfaceData()
   , _blinker{ nullptr }
   , _config{ nullptr }
   , _mqttClient{ nullptr }
+  , _mqttEnabled{ true }
   , _sendingPromise{ nullptr } {
 }
 
 InterfaceData& Interface::get() {
   return _interface;
 }
+

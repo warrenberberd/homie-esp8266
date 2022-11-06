@@ -274,15 +274,15 @@ ConfigValidationResult Validation::_validateConfigMqtt(const JsonObject object) 
   {
     JsonVariant mqttHost = mqtt["host"];
 
-    if (!mqttHost.as<const char*>()) {
+    if (!mqttHost.as<const char*>() && !mqttHost.isNull()) {
       result.reason = F("mqtt.host is not a string");
       return result;
     }
-    if (strlen(mqttHost.as<const char*>()) + 1 > MAX_HOSTNAME_LENGTH) {
+    if (!mqttHost.isNull() && strlen(mqttHost.as<const char*>()) + 1 > MAX_HOSTNAME_LENGTH) {
       result.reason = F("mqtt.host is too long");
       return result;
     }
-    if (strcmp_P(mqttHost.as<const char*>(), PSTR("")) == 0) {
+    if (!mqttHost.isNull() && strcmp_P(mqttHost.as<const char*>(), PSTR("")) == 0) {
       result.reason = F("mqtt.host is empty");
       return result;
     }

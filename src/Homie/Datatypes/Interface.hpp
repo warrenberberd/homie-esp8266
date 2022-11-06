@@ -72,6 +72,8 @@ class InterfaceData {
   Config& getConfig() { return *_config; }
   AsyncMqttClient& getMqttClient() { return *_mqttClient; }
   SendingPromise& getSendingPromise() { return *_sendingPromise; }
+  void setMqttEnabled(bool e){_mqttEnabled=e;}
+  bool isMqttEnabled(){return _mqttEnabled;}
 
  private:
   Logger* _logger;
@@ -79,6 +81,7 @@ class InterfaceData {
   Config* _config;
   AsyncMqttClient* _mqttClient;
   SendingPromise* _sendingPromise;
+  bool _mqttEnabled=true;
 };
 
 class Interface {

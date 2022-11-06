@@ -1,0 +1,10 @@
+// Fake file to permit Visual Studio Code Compilation with PlatformIO
+#include <Homie.h>
+
+void setup(){
+
+}
+
+void loop(){
+
+}

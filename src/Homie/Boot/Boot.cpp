@@ -16,7 +16,7 @@ void Boot::setup() {
   #ifdef ESP32
     WiFi.persistent(false); // Workaround for ESP32: Disable Wi-Fi persistence to prevent crashes on AP connect
   #else
-    WiFi.persistent(true);  // Persist data on SDK as it seems Wi-Fi connection is faster
+    WiFi.persistent(false);  // Persist data on SDK as it seems Wi-Fi connection is faster
   #endif //ESP32
 
   Interface::get().getLogger() << F("💡 Firmware ") << Interface::get().firmware.name << F(" (") << Interface::get().firmware.version << F(")") << endl;
@@ -24,4 +24,7 @@ void Boot::setup() {
 }
 
 void Boot::loop() {
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : Boot::loop()") << endl;
+#endif
 }

@@ -24,3 +24,9 @@ void Blinker::stop() {
 void Blinker::_tick(uint8_t pin) {
   digitalWrite(pin, !digitalRead(pin));
 }
+
+void Blinker::setLedON(){
+  stop(); // Stop blinking
+
+  digitalWrite(Interface::get().led.pin, HIGH);
+}

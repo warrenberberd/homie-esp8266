@@ -21,4 +21,7 @@ void BootStandalone::setup() {
 
 void BootStandalone::loop() {
   Boot::loop();
+#ifdef DEBUG
+  Interface::get().getLogger() << F("DEBUG : BootStandalone::loop()") << endl;
+#endif
 }
